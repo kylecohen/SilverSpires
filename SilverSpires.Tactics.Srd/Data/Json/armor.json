@@ -1,0 +1,19 @@
+[
+  {
+    "Id": "srd_chain_mail",
+    "Name": "Chain Mail",
+    "Category": "Armor",
+    "ArmorCategory": "Heavy",
+    "CostCopper": 7500,
+    "WeightPounds": 55.0,
+    "Description": "Interlocking metal rings.",
+    "ArmorClassBase": 16,
+    "AddsDexterityModifier": false,
+    "MaxDexterityBonus": null,
+    "StrengthRequirement": 13,
+    "ImposesStealthDisadvantage": true,
+    "Tags": [
+      "SRD"
+    ]
+  }
+]

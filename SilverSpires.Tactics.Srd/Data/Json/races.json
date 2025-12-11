@@ -1,0 +1,8 @@
+[
+  {
+    "Id": "human",
+    "Name": "Human",
+    "Size": "Medium",
+    "BaseSpeedFeet": 30
+  }
+]

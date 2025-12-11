@@ -1,0 +1,21 @@
+[
+  {
+    "Id": "srd_longsword",
+    "Name": "Longsword",
+    "Category": "Weapon",
+    "WeaponCategory": "Martial Melee",
+    "CostCopper": 1500,
+    "WeightPounds": 3.0,
+    "Description": "A versatile straight-bladed sword.",
+    "DamageDice": "1d8",
+    "DamageType": "Slashing",
+    "RangeNormalFeet": 5,
+    "RangeMaxFeet": 5,
+    "Properties": [
+      "Versatile (1d10)"
+    ],
+    "Tags": [
+      "SRD"
+    ]
+  }
+]

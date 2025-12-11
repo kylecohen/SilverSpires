@@ -1,0 +1,48 @@
+[
+  {
+    "Id": "srd_goblin",
+    "Name": "Goblin",
+    "Size": "Small",
+    "Type": "Humanoid",
+    "Alignment": "Neutral Evil",
+    "ArmorClass": 15,
+    "ArmorNotes": "Leather armor, shield",
+    "HitPointsAverage": 7,
+    "HitDice": "2d6",
+    "SpeedWalk": 30,
+    "SpeedFly": 0,
+    "SpeedSwim": 0,
+    "SpeedClimb": 0,
+    "SpeedBurrow": 0,
+    "Strength": 8,
+    "Dexterity": 14,
+    "Constitution": 10,
+    "Intelligence": 10,
+    "Wisdom": 8,
+    "Charisma": 8,
+    "SavingThrows": {},
+    "Skills": {
+      "Stealth": 6
+    },
+    "Senses": "Darkvision 60 ft.",
+    "PassivePerception": 9,
+    "Languages": "Common, Goblin",
+    "ChallengeRating": {
+      "Numerator": 1,
+      "Denominator": 4
+    },
+    "DamageVulnerabilities": [],
+    "DamageResistances": [],
+    "DamageImmunities": [],
+    "ConditionImmunities": [],
+    "TraitsMarkdown": "*Nimble Escape.* The goblin can take the Disengage or Hide action as a bonus action on each of its turns.",
+    "ActionsMarkdown": "*Scimitar.* Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 5 (1d6 + 2) slashing damage.\n*Shortbow.* Ranged Weapon Attack: +4 to hit, range 80/320 ft., one target. Hit: 5 (1d6 + 2) piercing damage.",
+    "ReactionsMarkdown": "",
+    "LegendaryActionsMarkdown": "",
+    "Tags": [
+      "SRD",
+      "lowlvl",
+      "goblin"
+    ]
+  }
+]

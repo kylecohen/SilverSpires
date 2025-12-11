@@ -1,0 +1,13 @@
+[
+  {
+    "Id": "torch",
+    "Name": "Torch",
+    "Category": "Adventuring Gear",
+    "CostCopper": 10,
+    "WeightPounds": 1.0,
+    "Description": "A simple wooden torch.",
+    "Tags": [
+      "SRD"
+    ]
+  }
+]

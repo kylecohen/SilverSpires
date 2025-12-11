@@ -1,0 +1,18 @@
+[
+  {
+    "Id": "common",
+    "Name": "Common",
+    "IsStandard": true,
+    "Script": "Common",
+    "TypicalSpeakers": "Most races",
+    "Description": "The language of most folk."
+  },
+  {
+    "Id": "elvish",
+    "Name": "Elvish",
+    "IsStandard": true,
+    "Script": "Elvish",
+    "TypicalSpeakers": "Elves",
+    "Description": "The musical language of elves."
+  }
+]

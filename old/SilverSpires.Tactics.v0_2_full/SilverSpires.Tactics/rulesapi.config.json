@@ -1,0 +1,6 @@
+{
+  "RulesApi": {
+    "BaseUrl": "https://api.open5e.com",
+    "ApiKey": ""
+  }
+}

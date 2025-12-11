@@ -1,0 +1,29 @@
+[
+  {
+    "Id": "fighter",
+    "Name": "Fighter",
+    "HitDie": 10,
+    "PrimaryAbilities": [
+      "Strength",
+      "Constitution"
+    ],
+    "SavingThrowProficiencies": [
+      "Strength",
+      "Constitution"
+    ],
+    "ArmorProficiencies": [
+      "Light",
+      "Medium",
+      "Heavy",
+      "Shields"
+    ],
+    "WeaponProficiencies": [
+      "Simple",
+      "Martial"
+    ],
+    "ToolProficiencies": [],
+    "Tags": [
+      "SRD"
+    ]
+  }
+]

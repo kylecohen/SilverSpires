@@ -1,0 +1,1 @@
+namespace SilverSpires.Tactics.Demo { internal static class Program { static void Main(string[] args) { System.Console.WriteLine("Placeholder - core demo code not available in this environment."); } } }

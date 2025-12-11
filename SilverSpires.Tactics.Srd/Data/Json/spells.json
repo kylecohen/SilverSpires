@@ -1,0 +1,38 @@
+[
+  {
+    "Id": "magic_missile",
+    "Name": "Magic Missile",
+    "Level": 1,
+    "School": "Evocation",
+    "ActionType": "Action",
+    "RangeType": "Distance",
+    "RangeFeet": 120,
+    "TargetShape": "Multiple",
+    "AreaRadiusFeet": 0,
+    "AreaLengthFeet": 0,
+    "AreaWidthFeet": 0,
+    "Components": [
+      "V",
+      "S"
+    ],
+    "IsRitual": false,
+    "RequiresConcentration": false,
+    "Duration": "Instantaneous",
+    "CastingTimeDescription": "1 action",
+    "SaveAbility": null,
+    "HalfOnSave": false,
+    "Damage": [
+      {
+        "Dice": "1d4+1",
+        "DamageType": "Force"
+      }
+    ],
+    "RulesText": "You create three glowing darts of magical force.",
+    "ClassListIds": [
+      "wizard"
+    ],
+    "Tags": [
+      "SRD"
+    ]
+  }
+]

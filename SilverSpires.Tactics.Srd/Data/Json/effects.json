@@ -1,0 +1,20 @@
+[
+  {
+    "Id": "srd_effect_second_wind",
+    "Name": "Second Wind",
+    "Source": "Class:Fighter",
+    "Trigger": "BonusAction",
+    "TargetScope": "Self",
+    "Description": "Regain 1d10 + fighter level hit points.",
+    "Components": []
+  },
+  {
+    "Id": "srd_effect_military_rank",
+    "Name": "Military Rank",
+    "Source": "Background:Soldier",
+    "Trigger": "Narrative",
+    "TargetScope": "NPCs",
+    "Description": "Soldiers loyal to your former military organization still recognize your authority and influence.",
+    "Components": []
+  }
+]

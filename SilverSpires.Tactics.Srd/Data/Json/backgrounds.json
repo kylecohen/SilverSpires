@@ -1,0 +1,18 @@
+[
+  {
+    "Id": "soldier",
+    "Name": "Soldier",
+    "Description": "You served in a military organization.",
+    "SkillProficiencies": [
+      "Athletics",
+      "Intimidation"
+    ],
+    "StartingEquipmentIds": [],
+    "FeatureEffectIds": [
+      "srd_effect_military_rank"
+    ],
+    "Tags": [
+      "SRD"
+    ]
+  }
+]

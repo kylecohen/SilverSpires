@@ -1,0 +1,14 @@
+[
+  {
+    "Id": "athletics",
+    "Name": "Athletics",
+    "Ability": "Strength",
+    "Description": "Covers climbing, jumping, and swimming."
+  },
+  {
+    "Id": "perception",
+    "Name": "Perception",
+    "Ability": "Wisdom",
+    "Description": "Spotting things, searching, listening."
+  }
+]

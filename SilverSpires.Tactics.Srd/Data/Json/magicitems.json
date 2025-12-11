@@ -1,0 +1,15 @@
+[
+  {
+    "Id": "bag_of_holding",
+    "Name": "Bag of Holding",
+    "Type": "Wondrous item",
+    "Rarity": "Uncommon",
+    "RequiresAttunement": false,
+    "AttunementRequirement": "",
+    "EffectIds": [],
+    "RulesText": "This bag can hold much more than its outside dimensions would indicate.",
+    "Tags": [
+      "SRD"
+    ]
+  }
+]
