@@ -1,13 +1,14 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text.Json;
 using SilverSpires.Tactics.Srd.Characters;
 using SilverSpires.Tactics.Srd.Items;
 using SilverSpires.Tactics.Srd.Monsters;
 using SilverSpires.Tactics.Srd.Rules;
 using SilverSpires.Tactics.Srd.Spells;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SilverSpires.Tactics.Srd.Data
 {
@@ -36,8 +37,11 @@ namespace SilverSpires.Tactics.Srd.Data
 
             _options = new JsonSerializerOptions
             {
-                PropertyNameCaseInsensitive = true
+                PropertyNameCaseInsensitive = true,
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true
             };
+            _options.Converters.Add(new JsonStringEnumConverter());
 
             Classes = LoadList<SrdClass>(jsonDirectory, "classes.json");
             Races = LoadList<SrdRace>(jsonDirectory, "races.json");

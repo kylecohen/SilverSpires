@@ -1,0 +1,31 @@
+{
+  "BestEffort": true,
+  "Fields": [
+    { "Target": "Id", "Source": ["id", "slug"], "Required": true },
+    { "Target": "Name", "Source": ["name"], "Required": true },
+    { "Target": "Size", "Source": ["size"], "Transform": "parse_size" },
+    { "Target": "Type", "Source": ["type"], "Transform": "parse_creature_type" },
+    { "Target": "Alignment", "Source": ["alignment"] },
+
+    { "Target": "ArmorClass", "Source": ["armor_class", "ArmorClass", "ac"] },
+    { "Target": "HitPointsAverage", "Source": ["hit_points", "HitPoints", "hp"] },
+    { "Target": "HitDice", "Source": ["hit_dice", "HitDice"] },
+
+    { "Target": "Strength", "Source": ["strength", "str"] },
+    { "Target": "Dexterity", "Source": ["dexterity", "dex"] },
+    { "Target": "Constitution", "Source": ["constitution", "con"] },
+    { "Target": "Intelligence", "Source": ["intelligence", "int"] },
+    { "Target": "Wisdom", "Source": ["wisdom", "wis"] },
+    { "Target": "Charisma", "Source": ["charisma", "cha"] },
+
+    { "Target": "Senses", "Source": ["senses"] },
+    { "Target": "Languages", "Source": ["languages"] },
+
+    { "Target": "ChallengeRating", "Source": ["challenge_rating", "cr"], "Transform": "parse_cr" },
+
+    { "Target": "TraitsMarkdown", "Source": ["traits", "special_abilities"] },
+    { "Target": "ActionsMarkdown", "Source": ["actions"] },
+    { "Target": "ReactionsMarkdown", "Source": ["reactions"] },
+    { "Target": "LegendaryActionsMarkdown", "Source": ["legendary_actions"] }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "BestEffort": true,
+  "Fields": [
+    { "Target": "Id", "Source": ["id", "slug"], "Required": true },
+    { "Target": "Name", "Source": ["name"], "Required": true },
+    { "Target": "Level", "Source": ["level"] },
+    { "Target": "School", "Source": ["school"] },
+    { "Target": "RulesText", "Source": ["desc", "RulesText", "text"] },
+    { "Target": "RequiresConcentration", "Source": ["concentration", "RequiresConcentration"] },
+    { "Target": "IsRitual", "Source": ["ritual", "IsRitual"] }
+  ]
+}
