@@ -17,7 +17,7 @@ internal static class Program
 {
     public static async Task Main(string[] args)
     {
-        var repo = CreateRepository();
+        var repo = ISrdRepository.CreateRepository();
         await repo.InitializeAsync();
 
         // Convenience bootstrap so the demo can update without manual setup.
@@ -86,18 +86,5 @@ internal static class Program
 
         Console.WriteLine();
         Console.WriteLine($"Winner: {winner}");
-    }
-
-    private static ISrdRepository CreateRepository()
-    {
-        var sqlCs = Environment.GetEnvironmentVariable("SRD_SQL_CONNECTION_STRING");
-        if (!string.IsNullOrWhiteSpace(sqlCs))
-            return new SqlServerSrdRepository(sqlCs);
-
-        var sqlitePath = Environment.GetEnvironmentVariable("SRD_SQLITE_PATH");
-        if (string.IsNullOrWhiteSpace(sqlitePath))
-            sqlitePath = Path.Combine(AppContext.BaseDirectory, "srd_cache.sqlite");
-
-        return new SqliteSrdRepository(sqlitePath);
     }
 }

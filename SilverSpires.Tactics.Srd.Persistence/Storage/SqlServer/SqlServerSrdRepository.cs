@@ -19,6 +19,16 @@ public sealed class SqlServerSrdRepository : ISrdRepository
     public SqlServerSrdRepository(string connectionString)
     {
         _cs = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+
+        _json = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true
+        };
+
+        _json.Converters.Add(new JsonStringEnumConverter());
+        _json.Converters.Add(new ChallengeRatingJsonConverter());
     }
 
     private SqlConnection CreateConnection() => new(_cs);

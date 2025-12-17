@@ -1,9 +1,11 @@
 using SilverSpires.Tactics.Srd.Characters;
 using SilverSpires.Tactics.Srd.Items;
 using SilverSpires.Tactics.Srd.Monsters;
+using SilverSpires.Tactics.Srd.Persistence.Registry;
+using SilverSpires.Tactics.Srd.Persistence.Storage.Sqlite;
+using SilverSpires.Tactics.Srd.Persistence.Storage.SqlServer;
 using SilverSpires.Tactics.Srd.Rules;
 using SilverSpires.Tactics.Srd.Spells;
-using SilverSpires.Tactics.Srd.Persistence.Registry;
 
 namespace SilverSpires.Tactics.Srd.Persistence.Storage;
 
@@ -50,4 +52,17 @@ public interface ISrdRepository
     Task<IReadOnlyList<SrdWeapon>> GetAllWeaponsAsync(CancellationToken ct = default);
     Task<IReadOnlyList<SrdArmor>> GetAllArmorAsync(CancellationToken ct = default);
     Task<IReadOnlyList<GameEffect>> GetAllEffectsAsync(CancellationToken ct = default);
+
+    public static ISrdRepository CreateRepository()
+    {
+        var sqlCs = Environment.GetEnvironmentVariable("SRD_SQL_CONNECTION_STRING");
+        if (!string.IsNullOrWhiteSpace(sqlCs))
+            return new SqlServerSrdRepository(sqlCs);
+
+        var sqlitePath = Environment.GetEnvironmentVariable("SRD_SQLITE_PATH");
+        if (string.IsNullOrWhiteSpace(sqlitePath))
+            sqlitePath = Path.Combine(AppContext.BaseDirectory, "srd_cache.sqlite");
+
+        return new SqliteSrdRepository(sqlitePath);
+    }
 }

@@ -4,6 +4,7 @@ using SilverSpires.Tactics.Srd.Items;
 using SilverSpires.Tactics.Srd.Monsters;
 using SilverSpires.Tactics.Srd.Persistence.Registry;
 using SilverSpires.Tactics.Srd.Persistence.Storage.Json;
+using SilverSpires.Tactics.Srd.Persistence.Storage.SqlServer;
 using SilverSpires.Tactics.Srd.Rules;
 using SilverSpires.Tactics.Srd.Spells;
 using System.Text.Json;
@@ -19,6 +20,16 @@ public sealed class SqliteSrdRepository : ISrdRepository
     public SqliteSrdRepository(string dbPath)
     {
         _dbPath = dbPath ?? throw new ArgumentNullException(nameof(dbPath));
+
+        _json = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true
+        };
+
+        _json.Converters.Add(new JsonStringEnumConverter());
+        _json.Converters.Add(new ChallengeRatingJsonConverter());
     }
 
     private SqliteConnection CreateConnection() => new($"Data Source={_dbPath}");

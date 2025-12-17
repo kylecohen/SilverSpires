@@ -12,7 +12,7 @@ if (args.Length == 0)
     return;
 }
 
-var repo = CreateRepository();
+var repo = ISrdRepository.CreateRepository();
 await repo.InitializeAsync();
 
 var http = new HttpClient();
@@ -55,19 +55,6 @@ if (cmd == "update")
 }
 
 PrintHelp();
-
-static ISrdRepository CreateRepository()
-{
-    var sqlCs = Environment.GetEnvironmentVariable("SRD_SQL_CONNECTION_STRING");
-    if (!string.IsNullOrWhiteSpace(sqlCs))
-        return new SqlServerSrdRepository(sqlCs);
-
-    var sqlitePath = Environment.GetEnvironmentVariable("SRD_SQLITE_PATH");
-    if (string.IsNullOrWhiteSpace(sqlitePath))
-        sqlitePath = Path.Combine(AppContext.BaseDirectory, "srd_cache.sqlite");
-
-    return new SqliteSrdRepository(sqlitePath);
-}
 
 static void PrintHelp()
 {
