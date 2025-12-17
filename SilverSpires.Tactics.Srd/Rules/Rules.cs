@@ -58,21 +58,27 @@ namespace SilverSpires.Tactics.Srd.Rules
 
     public readonly struct ChallengeRating
     {
-        public int Numerator { get; }
-        public int Denominator { get; }
+        public double Numeric { get; }
+        public string? Text { get; }
 
-        public ChallengeRating(int numerator, int denominator)
+        private ChallengeRating(double numeric, string? text)
         {
-            Numerator = numerator;
-            Denominator = denominator == 0 ? 1 : denominator;
+            Numeric = numeric;
+            Text = text;
         }
 
-        public double ToDouble() => (double)Numerator / Denominator;
+        public static ChallengeRating FromNumeric(double numeric) => new ChallengeRating(numeric, null);
+        public static ChallengeRating FromText(string text) => new ChallengeRating(0, text);
 
         public override string ToString()
         {
-            if (Denominator == 1) return Numerator.ToString();
-            return $"{Numerator}/{Denominator}";
+            if (!string.IsNullOrWhiteSpace(Text)) return Text!;
+            // Pretty print common fractions
+            if (Math.Abs(Numeric - 0.125) < 0.0001) return "1/8";
+            if (Math.Abs(Numeric - 0.25) < 0.0001) return "1/4";
+            if (Math.Abs(Numeric - 0.5) < 0.0001) return "1/2";
+            if (Math.Abs(Numeric - Math.Round(Numeric)) < 0.0001) return ((int)Math.Round(Numeric)).ToString();
+            return Numeric.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
     }
 }

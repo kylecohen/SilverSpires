@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -9,7 +8,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SilverSpires.Tactics.Srd\SilverSpires.Tactics.Srd.csproj" />
-    <ProjectReference Include="..\SilverSpires.Tactics.Srd.Persistence\SilverSpires.Tactics.Srd.Persistence.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.0" />
+  </ItemGroup>
 </Project>

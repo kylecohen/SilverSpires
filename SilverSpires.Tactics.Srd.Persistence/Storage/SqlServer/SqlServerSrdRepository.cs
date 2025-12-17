@@ -1,15 +1,15 @@
 using Microsoft.Data.SqlClient;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using SilverSpires.Tactics.Srd.Ingestion.Abstractions;
-using SilverSpires.Tactics.Srd.Ingestion.Storage;
 using SilverSpires.Tactics.Srd.Characters;
 using SilverSpires.Tactics.Srd.Items;
 using SilverSpires.Tactics.Srd.Monsters;
+using SilverSpires.Tactics.Srd.Persistence.Registry;
+using SilverSpires.Tactics.Srd.Persistence.Storage.Json;
 using SilverSpires.Tactics.Srd.Rules;
 using SilverSpires.Tactics.Srd.Spells;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
-namespace SilverSpires.Tactics.Srd.Ingestion.Storage.SqlServer;
+namespace SilverSpires.Tactics.Srd.Persistence.Storage.SqlServer;
 
 public sealed class SqlServerSrdRepository : ISrdRepository
 {
@@ -19,8 +19,6 @@ public sealed class SqlServerSrdRepository : ISrdRepository
     public SqlServerSrdRepository(string connectionString)
     {
         _cs = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-        _json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        _json.Converters.Add(new JsonStringEnumConverter());
     }
 
     private SqlConnection CreateConnection() => new(_cs);
@@ -30,76 +28,97 @@ public sealed class SqlServerSrdRepository : ISrdRepository
         await using var conn = CreateConnection();
         await conn.OpenAsync(ct);
 
-        var cmd = conn.CreateCommand();
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
 IF OBJECT_ID('dbo.SrdEntities','U') IS NULL
 BEGIN
-    CREATE TABLE dbo.SrdEntities(
-        EntityType NVARCHAR(64) NOT NULL,
-        Id NVARCHAR(256) NOT NULL,
-        Json NVARCHAR(MAX) NOT NULL,
-        UpdatedUtc DATETIME2 NOT NULL,
-        CONSTRAINT PK_SrdEntities PRIMARY KEY (EntityType, Id)
-    );
+  CREATE TABLE dbo.SrdEntities(
+    EntityType NVARCHAR(64) NOT NULL,
+    Id NVARCHAR(256) NOT NULL,
+    Json NVARCHAR(MAX) NOT NULL,
+    UpdatedUtc DATETIME2 NOT NULL,
+    CONSTRAINT PK_SrdEntities PRIMARY KEY (EntityType, Id)
+  );
 END
 
 IF OBJECT_ID('dbo.Sources','U') IS NULL
 BEGIN
-    CREATE TABLE dbo.Sources(
-        Id NVARCHAR(128) NOT NULL PRIMARY KEY,
-        Name NVARCHAR(256) NOT NULL,
-        Kind NVARCHAR(64) NOT NULL,
-        ConnectionJson NVARCHAR(MAX) NOT NULL,
-        IsEnabled BIT NOT NULL,
-        UpdatedUtc DATETIME2 NOT NULL
-    );
+  CREATE TABLE dbo.Sources(
+    Id NVARCHAR(128) NOT NULL PRIMARY KEY,
+    Name NVARCHAR(256) NOT NULL,
+    Kind NVARCHAR(64) NOT NULL,
+    ConnectionJson NVARCHAR(MAX) NOT NULL,
+    IsEnabled BIT NOT NULL,
+    UpdatedUtc DATETIME2 NOT NULL
+  );
 END
 
 IF OBJECT_ID('dbo.MappingProfiles','U') IS NULL
 BEGIN
-    CREATE TABLE dbo.MappingProfiles(
-        Id NVARCHAR(128) NOT NULL PRIMARY KEY,
-        Name NVARCHAR(256) NOT NULL,
-        EntityType NVARCHAR(64) NOT NULL,
-        TargetClrType NVARCHAR(512) NOT NULL,
-        RulesJson NVARCHAR(MAX) NOT NULL,
-        UpdatedUtc DATETIME2 NOT NULL
-    );
+  CREATE TABLE dbo.MappingProfiles(
+    Id NVARCHAR(128) NOT NULL PRIMARY KEY,
+    Name NVARCHAR(256) NOT NULL,
+    EntityType NVARCHAR(64) NOT NULL,
+    RulesJson NVARCHAR(MAX) NOT NULL,
+    UpdatedUtc DATETIME2 NOT NULL
+  );
 END
 
 IF OBJECT_ID('dbo.Feeds','U') IS NULL
 BEGIN
-    CREATE TABLE dbo.Feeds(
-        Id NVARCHAR(128) NOT NULL PRIMARY KEY,
-        SourceId NVARCHAR(128) NOT NULL,
-        EntityType NVARCHAR(64) NOT NULL,
-        FeedJson NVARCHAR(MAX) NOT NULL,
-        MappingProfileId NVARCHAR(128) NOT NULL,
-        IsEnabled BIT NOT NULL,
-        UpdatedUtc DATETIME2 NOT NULL
-    );
+  CREATE TABLE dbo.Feeds(
+    Id NVARCHAR(128) NOT NULL PRIMARY KEY,
+    SourceId NVARCHAR(128) NOT NULL,
+    EntityType NVARCHAR(64) NOT NULL,
+    FeedJson NVARCHAR(MAX) NOT NULL,
+    MappingProfileId NVARCHAR(128) NOT NULL,
+    IsEnabled BIT NOT NULL,
+    UpdatedUtc DATETIME2 NOT NULL
+  );
 END
 ";
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
     // Registry
-    public Task UpsertSourceAsync(SourceDefinition source, CancellationToken ct = default)
-        => UpsertSourceInternalAsync(source, ct);
+    public Task UpsertSourceAsync(SourceDefinition source, CancellationToken ct = default) => UpsertSourceInternalAsync(source, ct);
+    public Task UpsertMappingProfileAsync(MappingProfile profile, CancellationToken ct = default) => UpsertProfileInternalAsync(profile, ct);
+    public Task UpsertFeedAsync(SourceEntityFeed feed, CancellationToken ct = default) => UpsertFeedInternalAsync(feed, ct);
 
-    public Task UpsertMappingProfileAsync(MappingProfile profile, CancellationToken ct = default)
-        => UpsertMappingProfileInternalAsync(profile, ct);
+    public async Task<IReadOnlyList<SourceDefinition>> GetSourcesAsync(CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
 
-    public Task UpsertFeedAsync(SourceEntityFeed feed, CancellationToken ct = default)
-        => UpsertFeedInternalAsync(feed, ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, Name, Kind, ConnectionJson, IsEnabled, UpdatedUtc FROM dbo.Sources ORDER BY Name;";
+
+        var list = new List<SourceDefinition>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+        {
+            list.Add(new SourceDefinition
+            {
+                Id = r.GetString(0),
+                Name = r.GetString(1),
+                Kind = Enum.Parse<SrdSourceKind>(r.GetString(2)),
+                ConnectionJson = r.GetString(3),
+                IsEnabled = r.GetBoolean(4),
+                UpdatedUtc = r.GetDateTime(5)
+            });
+        }
+        return list;
+    }
 
     public async Task<SourceDefinition?> GetSourceAsync(string id, CancellationToken ct = default)
     {
         await using var conn = CreateConnection();
         await conn.OpenAsync(ct);
+
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Id, Name, Kind, ConnectionJson, IsEnabled, UpdatedUtc FROM dbo.Sources WHERE Id=@id";
         cmd.Parameters.AddWithValue("@id", id);
+
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
 
@@ -114,55 +133,15 @@ END
         };
     }
 
-    public async Task<MappingProfile?> GetMappingProfileAsync(string id, CancellationToken ct = default)
+    public async Task<IReadOnlyList<SourceEntityFeed>> GetFeedsBySourceAsync(string sourceId, bool enabledOnly, CancellationToken ct = default)
     {
         await using var conn = CreateConnection();
         await conn.OpenAsync(ct);
+
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Name, EntityType, TargetClrType, RulesJson, UpdatedUtc FROM dbo.MappingProfiles WHERE Id=@id";
-        cmd.Parameters.AddWithValue("@id", id);
-        await using var r = await cmd.ExecuteReaderAsync(ct);
-        if (!await r.ReadAsync(ct)) return null;
-
-        return new MappingProfile
-        {
-            Id = r.GetString(0),
-            Name = r.GetString(1),
-            EntityType = Enum.Parse<SrdEntityType>(r.GetString(2)),
-            TargetClrType = r.GetString(3),
-            RulesJson = r.GetString(4),
-            UpdatedUtc = r.GetDateTime(5)
-        };
-    }
-
-    public async Task<SourceEntityFeed?> GetFeedAsync(string id, CancellationToken ct = default)
-    {
-        await using var conn = CreateConnection();
-        await conn.OpenAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, SourceId, EntityType, FeedJson, MappingProfileId, IsEnabled, UpdatedUtc FROM dbo.Feeds WHERE Id=@id";
-        cmd.Parameters.AddWithValue("@id", id);
-        await using var r = await cmd.ExecuteReaderAsync(ct);
-        if (!await r.ReadAsync(ct)) return null;
-
-        return new SourceEntityFeed
-        {
-            Id = r.GetString(0),
-            SourceId = r.GetString(1),
-            EntityType = Enum.Parse<SrdEntityType>(r.GetString(2)),
-            FeedJson = r.GetString(3),
-            MappingProfileId = r.GetString(4),
-            IsEnabled = r.GetBoolean(5),
-            UpdatedUtc = r.GetDateTime(6)
-        };
-    }
-
-    public async Task<IReadOnlyList<SourceEntityFeed>> GetEnabledFeedsAsync(string sourceId, CancellationToken ct = default)
-    {
-        await using var conn = CreateConnection();
-        await conn.OpenAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, SourceId, EntityType, FeedJson, MappingProfileId, IsEnabled, UpdatedUtc FROM dbo.Feeds WHERE SourceId=@sid AND IsEnabled=1";
+        cmd.CommandText = enabledOnly
+            ? "SELECT Id, SourceId, EntityType, FeedJson, MappingProfileId, IsEnabled, UpdatedUtc FROM dbo.Feeds WHERE SourceId=@sid AND IsEnabled=1"
+            : "SELECT Id, SourceId, EntityType, FeedJson, MappingProfileId, IsEnabled, UpdatedUtc FROM dbo.Feeds WHERE SourceId=@sid";
         cmd.Parameters.AddWithValue("@sid", sourceId);
 
         var list = new List<SourceEntityFeed>();
@@ -183,6 +162,28 @@ END
         return list;
     }
 
+    public async Task<MappingProfile?> GetMappingProfileAsync(string id, CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, Name, EntityType, RulesJson, UpdatedUtc FROM dbo.MappingProfiles WHERE Id=@id";
+        cmd.Parameters.AddWithValue("@id", id);
+
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) return null;
+
+        return new MappingProfile
+        {
+            Id = r.GetString(0),
+            Name = r.GetString(1),
+            EntityType = Enum.Parse<SrdEntityType>(r.GetString(2)),
+            RulesJson = r.GetString(3),
+            UpdatedUtc = r.GetDateTime(4)
+        };
+    }
+
     private async Task UpsertSourceInternalAsync(SourceDefinition s, CancellationToken ct)
     {
         await using var conn = CreateConnection();
@@ -193,7 +194,7 @@ MERGE dbo.Sources AS tgt
 USING (SELECT @id AS Id) AS src
 ON tgt.Id = src.Id
 WHEN MATCHED THEN UPDATE SET
-    Name=@name, Kind=@kind, ConnectionJson=@conn, IsEnabled=@enabled, UpdatedUtc=SYSUTCDATETIME()
+  Name=@name, Kind=@kind, ConnectionJson=@conn, IsEnabled=@enabled, UpdatedUtc=SYSUTCDATETIME()
 WHEN NOT MATCHED THEN INSERT (Id, Name, Kind, ConnectionJson, IsEnabled, UpdatedUtc)
 VALUES (@id, @name, @kind, @conn, @enabled, SYSUTCDATETIME());";
         cmd.Parameters.AddWithValue("@id", s.Id);
@@ -204,7 +205,7 @@ VALUES (@id, @name, @kind, @conn, @enabled, SYSUTCDATETIME());";
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private async Task UpsertMappingProfileInternalAsync(MappingProfile p, CancellationToken ct)
+    private async Task UpsertProfileInternalAsync(MappingProfile p, CancellationToken ct)
     {
         await using var conn = CreateConnection();
         await conn.OpenAsync(ct);
@@ -214,14 +215,13 @@ MERGE dbo.MappingProfiles AS tgt
 USING (SELECT @id AS Id) AS src
 ON tgt.Id = src.Id
 WHEN MATCHED THEN UPDATE SET
-    Name=@name, EntityType=@etype, TargetClrType=@clr, RulesJson=@rules, UpdatedUtc=SYSUTCDATETIME()
-WHEN NOT MATCHED THEN INSERT (Id, Name, EntityType, TargetClrType, RulesJson, UpdatedUtc)
-VALUES (@id, @name, @etype, @clr, @rules, SYSUTCDATETIME());";
+  Name=@name, EntityType=@etype, RulesJson=@rules, UpdatedUtc=SYSUTCDATETIME()
+WHEN NOT MATCHED THEN INSERT (Id, Name, EntityType, RulesJson, UpdatedUtc)
+VALUES (@id, @name, @etype, @rules, SYSUTCDATETIME());";
         cmd.Parameters.AddWithValue("@id", p.Id);
         cmd.Parameters.AddWithValue("@name", p.Name);
         cmd.Parameters.AddWithValue("@etype", p.EntityType.ToString());
-        cmd.Parameters.AddWithValue("@clr", p.TargetClrType ?? "");
-        cmd.Parameters.AddWithValue("@rules", p.RulesJson ?? "{}");
+        cmd.Parameters.AddWithValue("@rules", p.RulesJson);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -235,19 +235,19 @@ MERGE dbo.Feeds AS tgt
 USING (SELECT @id AS Id) AS src
 ON tgt.Id = src.Id
 WHEN MATCHED THEN UPDATE SET
-    SourceId=@sid, EntityType=@etype, FeedJson=@feed, MappingProfileId=@mpid, IsEnabled=@enabled, UpdatedUtc=SYSUTCDATETIME()
+  SourceId=@sid, EntityType=@etype, FeedJson=@feed, MappingProfileId=@mpid, IsEnabled=@enabled, UpdatedUtc=SYSUTCDATETIME()
 WHEN NOT MATCHED THEN INSERT (Id, SourceId, EntityType, FeedJson, MappingProfileId, IsEnabled, UpdatedUtc)
 VALUES (@id, @sid, @etype, @feed, @mpid, @enabled, SYSUTCDATETIME());";
         cmd.Parameters.AddWithValue("@id", f.Id);
         cmd.Parameters.AddWithValue("@sid", f.SourceId);
         cmd.Parameters.AddWithValue("@etype", f.EntityType.ToString());
-        cmd.Parameters.AddWithValue("@feed", f.FeedJson ?? "{}");
+        cmd.Parameters.AddWithValue("@feed", f.FeedJson);
         cmd.Parameters.AddWithValue("@mpid", f.MappingProfileId);
         cmd.Parameters.AddWithValue("@enabled", f.IsEnabled);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    // Canonical SRD entity storage: JSON blob
+    // Entity upserts
     public Task UpsertClassAsync(SrdClass entity, CancellationToken ct = default) => UpsertEntityAsync("Class", entity.Id, entity, ct);
     public Task UpsertRaceAsync(SrdRace entity, CancellationToken ct = default) => UpsertEntityAsync("Race", entity.Id, entity, ct);
     public Task UpsertBackgroundAsync(SrdBackground entity, CancellationToken ct = default) => UpsertEntityAsync("Background", entity.Id, entity, ct);
@@ -282,7 +282,7 @@ WHEN NOT MATCHED THEN INSERT (EntityType, Id, Json, UpdatedUtc) VALUES (@type, @
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    // Reads for export (monsters etc.)
+    // Entity reads
     public Task<IReadOnlyList<SrdClass>> GetAllClassesAsync(CancellationToken ct = default) => GetAllAsync<SrdClass>("Class", ct);
     public Task<IReadOnlyList<SrdRace>> GetAllRacesAsync(CancellationToken ct = default) => GetAllAsync<SrdRace>("Race", ct);
     public Task<IReadOnlyList<SrdBackground>> GetAllBackgroundsAsync(CancellationToken ct = default) => GetAllAsync<SrdBackground>("Background", ct);
@@ -301,6 +301,7 @@ WHEN NOT MATCHED THEN INSERT (EntityType, Id, Json, UpdatedUtc) VALUES (@type, @
     {
         await using var conn = CreateConnection();
         await conn.OpenAsync(ct);
+
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Json FROM dbo.SrdEntities WHERE EntityType=@type";
         cmd.Parameters.AddWithValue("@type", type);

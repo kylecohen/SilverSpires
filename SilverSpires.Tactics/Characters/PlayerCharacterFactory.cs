@@ -69,7 +69,7 @@ namespace SilverSpires.Tactics.Characters
                 wisdom: tpl.Wisdom,
                 charisma: tpl.Charisma,
                 speedFeet: speedFeet,
-                challengeRating: new ChallengeRating(0, 1));
+                challengeRating: ChallengeRating.FromNumeric(ConvertPlayerLvToCR(tpl.Level)));
 
             var creature = new CreatureInstance(stats, startPosition);
             var unit = new BattleUnit(creature, faction);
@@ -98,6 +98,20 @@ namespace SilverSpires.Tactics.Characters
             unit.Actions.Add(new DodgeAction(source: "Standard:Rules"));
 
             return unit;
+        }
+
+        private static double ConvertPlayerLvToCR(int level)
+        {
+            return level switch
+            {
+                1 => 0.25,
+                2 or 3 => 0.5,
+                4 => 1.0,
+                5 or 6 => 2.0,
+                > 15 => Math.Ceiling(level / 2.0),
+                > 6 => Math.Ceiling(level / 3.0),
+                _ => throw new ArgumentOutOfRangeException(nameof(level))
+            };
         }
     }
 }

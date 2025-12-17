@@ -1,20 +1,13 @@
-using System.Text.Json;
-
 namespace SilverSpires.Tactics.Srd.Ingestion.Sources.Json;
 
-/// <summary>
-/// FeedJson schema for both file and http feeds.
-/// </summary>
 public sealed class JsonFeedConfig
 {
-    public string? Path { get; set; }           // for FileJson
-    public string? Url { get; set; }            // for HttpJson
-    public string Root { get; set; } = "$";     // "$" or "$.results"
-}
+    // For FileJson: relative path under basePath; For HttpJson: absolute or relative to baseUrl
+    public string PathOrUrl { get; set; } = string.Empty;
 
-public static class JsonFeedConfigParser
-{
-    public static JsonFeedConfig Parse(string feedJson)
-        => JsonSerializer.Deserialize<JsonFeedConfig>(feedJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-           ?? new JsonFeedConfig();
+    // JSON Pointer-like dot path to array (default "results"); supports "" for root array
+    public string ItemsProperty { get; set; } = "results";
+
+    // For paged HTTP APIs like Open5e: property that contains next page URL (default "next")
+    public string NextPageProperty { get; set; } = "next";
 }

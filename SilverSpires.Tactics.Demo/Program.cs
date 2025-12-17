@@ -1,126 +1,103 @@
-using System;
-using System.IO;
-using System.Linq;
 using SilverSpires.Tactics.Characters;
 using SilverSpires.Tactics.Combat;
 using SilverSpires.Tactics.Encounters;
 using SilverSpires.Tactics.Maps;
-using SilverSpires.Tactics.Srd.Data;
+using SilverSpires.Tactics.Srd.Persistence.Catalog;
+using SilverSpires.Tactics.Srd.Persistence.Storage;
+using SilverSpires.Tactics.Srd.Persistence.Storage.SqlServer;
+using SilverSpires.Tactics.Srd.Persistence.Storage.Sqlite;
+using SilverSpires.Tactics.Srd.Ingestion.Ingestion;
+using SilverSpires.Tactics.Srd.Ingestion.Mapping;
+using SilverSpires.Tactics.Srd.Ingestion.Sources.Json;
+using SilverSpires.Tactics.Srd.IngestionModule.Ingestion;
 
-namespace SilverSpires.Tactics.Demo
+namespace SilverSpires.Tactics.Demo;
+
+internal static class Program
 {
-    internal class Program
+    public static async Task Main(string[] args)
     {
-        static void Main(string[] args)
+        var repo = CreateRepository();
+        await repo.InitializeAsync();
+
+        // Convenience bootstrap so the demo can update without manual setup.
+        // If you want the DB to be totally user-driven, remove this line.
+        await Open5eBootstrap.EnsureRegisteredAsync(repo);
+
+        // Update SRD from enabled sources
+        var http = new HttpClient();
+        var readers = new DefaultSourceReaderFactory(http);
+        var mapper = new GenericMappingEngine();
+        var ingestion = new SrdIngestionService(repo, readers, mapper);
+        var updater = new SrdUpdater(ingestion);
+        await updater.UpdateAllEnabledSourcesAsync();
+
+        // Load catalog from DB
+        var catalog = new DbSrdCatalog(repo);
+        await catalog.LoadAsync();
+
+        Console.WriteLine($"Loaded SRD from DB: Monsters={catalog.Monsters.Count}, Spells={catalog.Spells.Count}");
+
+        // Map
+        var map = new GameMap(width: 20, height: 12);
+
+        // PCs (standard array)
+        var pc1Tpl = new PlayerCharacterTemplate
         {
-            var solutionRoot = FindSolutionRoot();
-            var srdJsonPath = Path.Combine(
-                solutionRoot,
-                "SilverSpires.Tactics.Srd",
-                "Data",
-                "Json");
+            Name = "Player One",
+            Strength = 15, Dexterity = 14, Constitution = 13, Intelligence = 12, Wisdom = 10, Charisma = 8,
+            WeaponId = "longsword",
+            ArmorId = "chain_mail"
+        };
 
-            ISrdCatalog catalog = new JsonSrdCatalog(srdJsonPath);
-
-            var map = BuildMap(20, 12);
-
-            var pc1Template = new PlayerCharacterTemplate
-            {
-                Name = "Alaric",
-                Level = 1,
-                Strength = 16,
-                Dexterity = 12,
-                Constitution = 14,
-                Intelligence = 10,
-                Wisdom = 10,
-                Charisma = 8
-            };
-
-            var pc2Template = new PlayerCharacterTemplate
-            {
-                Name = "Briala",
-                Level = 1,
-                Strength = 14,
-                Dexterity = 16,
-                Constitution = 13,
-                Intelligence = 10,
-                Wisdom = 12,
-                Charisma = 8
-            };
-
-            var pc1 = PlayerCharacterFactory.CreateBattleUnit(
-                catalog, pc1Template, new GridPosition(2, 5), Faction.Player1);
-
-            var pc2 = PlayerCharacterFactory.CreateBattleUnit(
-                catalog, pc2Template, new GridPosition(2, 7), Faction.Player2);
-
-            var encounterService = new EncounterService(catalog, new Random());
-            var goblinEncounter = EncounterDefinition.Create(
-                id: "demo_goblins",
-                name: "Demo Goblin Pack",
-                new EncounterSpawnSpec
-                {
-                    MonsterId = "srd_goblin",
-                    Count = 4,
-                    SpawnArea = new RectangleArea(13, 4, 5, 4),
-                    GroupTag = "goblins"
-                });
-
-            var goblinUnits = encounterService
-                .SpawnEncounter(map, goblinEncounter, Faction.Goblins)
-                .ToList();
-
-            var allUnits = new System.Collections.Generic.List<BattleUnit>();
-            allUnits.Add(pc1);
-            allUnits.Add(pc2);
-            allUnits.AddRange(goblinUnits);
-
-            var battleRunner = new BattleRunner();
-            var winner = battleRunner.RunBattle(map, allUnits, new Random());
-
-            Console.WriteLine();
-            Console.WriteLine("Final survivors:");
-            foreach (var u in allUnits.Where(u => u.IsAlive))
-            {
-                Console.WriteLine($"  {u}");
-            }
-
-            Console.WriteLine();
-            Console.WriteLine($"Winner faction: {winner}");
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey();
-        }
-
-        private static string FindSolutionRoot()
+        var pc2Tpl = new PlayerCharacterTemplate
         {
-            var dir = Directory.GetCurrentDirectory();
-            while (dir != null)
+            Name = "Player Two",
+            Strength = 14, Dexterity = 15, Constitution = 13,
+            Intelligence = 10, Wisdom = 12, Charisma = 8,
+            WeaponId = "rapier",
+            ArmorId = "leather"
+        };
+
+        var pc1 = PlayerCharacterFactory.CreateBattleUnit(catalog, pc1Tpl, new GridPosition(2, 2), Faction.Player1);
+        var pc2 = PlayerCharacterFactory.CreateBattleUnit(catalog, pc2Tpl, new GridPosition(2, 4), Faction.Player2);
+
+        // Goblins via encounter service (spawn grouped)
+        var encounter = EncounterDefinition.Create(
+            id: "demo_goblins",
+            name: "Demo Goblin Skirmish",
+            new EncounterSpawnSpec
             {
-                if (Directory.GetFiles(dir, "*.sln").Length > 0)
-                    return dir;
+                MonsterId = "goblin",
+                Count = 4,
+                SpawnArea = new RectangleArea(x: 14, y: 2, width: 4, height: 6),
+                GroupTag = "goblins"
+            });
 
-                dir = Directory.GetParent(dir)?.FullName;
-            }
+        var encounterService = new EncounterService(catalog);
+        var goblins = encounterService.SpawnEncounter(map, encounter, Faction.Goblins);
 
-            throw new InvalidOperationException("Could not find solution root with a .sln file.");
-        }
+        var units = new List<BattleUnit> { pc1, pc2 };
+        units.AddRange(goblins);
 
-        private static GameMap BuildMap(int width, int height)
-        {
-            var map = new GameMap(width, height);
+        // Run battle (simple nearest-enemy AI inside BattleRunner)
+        var runner = new BattleRunner();
+        var winner = runner.RunBattle(map, units);
 
-            for (int x = 0; x < map.Width; x++)
-            {
-                map[x, 0].BlocksMovement = map[x, 0].BlocksVision = true;
-                map[x, map.Height - 1].BlocksMovement = map[x, map.Height - 1].BlocksVision = true;
-            }
-            for (int y = 0; y < map.Height; y++)
-            {
-                map[0, y].BlocksMovement = map[0, y].BlocksVision = true;
-                map[map.Width - 1, y].BlocksMovement = map[map.Width - 1, y].BlocksVision = true;
-            }
+        Console.WriteLine();
+        Console.WriteLine($"Winner: {winner}");
+    }
 
-            return map;
-        }
+    private static ISrdRepository CreateRepository()
+    {
+        var sqlCs = Environment.GetEnvironmentVariable("SRD_SQL_CONNECTION_STRING");
+        if (!string.IsNullOrWhiteSpace(sqlCs))
+            return new SqlServerSrdRepository(sqlCs);
+
+        var sqlitePath = Environment.GetEnvironmentVariable("SRD_SQLITE_PATH");
+        if (string.IsNullOrWhiteSpace(sqlitePath))
+            sqlitePath = Path.Combine(AppContext.BaseDirectory, "srd_cache.sqlite");
+
+        return new SqliteSrdRepository(sqlitePath);
     }
 }

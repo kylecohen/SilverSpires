@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using SilverSpires.Tactics.Srd.Ingestion.Storage;
+using SilverSpires.Tactics.Srd.Persistence.Storage;
 
 namespace SilverSpires.Tactics.Srd.Ingestion.Export;
 

@@ -1,4 +1,5 @@
 using SilverSpires.Tactics.Srd.Ingestion.Abstractions;
+using SilverSpires.Tactics.Srd.Persistence.Registry;
 
 namespace SilverSpires.Tactics.Srd.Ingestion.Sources.Json;
 
@@ -6,9 +7,9 @@ public sealed class DefaultSourceReaderFactory : ISourceReaderFactory
 {
     private readonly HttpClient _http;
 
-    public DefaultSourceReaderFactory(HttpClient? http = null)
+    public DefaultSourceReaderFactory(HttpClient httpClient)
     {
-        _http = http ?? new HttpClient();
+        _http = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
     }
 
     public ISourceReader Create(SrdSourceKind kind)

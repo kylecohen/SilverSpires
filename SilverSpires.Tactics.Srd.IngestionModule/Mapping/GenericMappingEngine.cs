@@ -1,10 +1,10 @@
+using SilverSpires.Tactics.Srd.Ingestion.Abstractions;
+using SilverSpires.Tactics.Srd.Persistence.Registry;
+using SilverSpires.Tactics.Srd.Persistence.Storage.Json;
+using SilverSpires.Tactics.Srd.Rules;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using SilverSpires.Tactics.Srd.Ingestion.Abstractions;
-using SilverSpires.Tactics.Srd.Ingestion.Normalization;
-using SilverSpires.Tactics.Srd.Ingestion.Mapping;
-using SilverSpires.Tactics.Srd.Rules;
 
 namespace SilverSpires.Tactics.Srd.Ingestion.Mapping;
 
@@ -12,103 +12,158 @@ public sealed class GenericMappingEngine : IMappingEngine
 {
     private readonly JsonSerializerOptions _json;
 
+    private static readonly Dictionary<string, string[]> Synonyms = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Strength"] = new[] { "strength", "str" },
+        ["Dexterity"] = new[] { "dexterity", "dex" },
+        ["Constitution"] = new[] { "constitution", "con" },
+        ["Intelligence"] = new[] { "intelligence", "int" },
+        ["Wisdom"] = new[] { "wisdom", "wis" },
+        ["Charisma"] = new[] { "charisma", "cha" },
+
+        ["Id"] = new[] { "id", "slug", "key", "identifier" },
+        ["ArmorClass"] = new[] { "armor_class", "ac", "ArmorClass" },
+        ["HitPointsAverage"] = new[] { "hit_points", "hp", "HitPoints" },
+        ["HitDice"] = new[] { "hit_dice", "HitDice" },
+        ["ChallengeRating"] = new[] { "challenge_rating", "cr", "ChallengeRating" },
+    };
+
     public GenericMappingEngine()
     {
-        _json = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        };
-        _json.Converters.Add(new JsonStringEnumConverter());
+        _json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        _json.Converters.Add(new JsonStringEnumConverter()); // optional now
+        _json.Converters.Add(new ChallengeRatingJsonConverter());
+
+        // Add safe converters for enums you know are problematic:
+        _json.Converters.Add(new SafeEnumJsonConverter<AbilityScoreType>(
+            new Dictionary<string, AbilityScoreType>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["str"] = AbilityScoreType.Strength,
+                ["dex"] = AbilityScoreType.Dexterity,
+                ["con"] = AbilityScoreType.Constitution,
+                ["int"] = AbilityScoreType.Intelligence,
+                ["wis"] = AbilityScoreType.Wisdom,
+                ["cha"] = AbilityScoreType.Charisma,
+            }));
     }
 
-    public MappingResult<TTarget> Map<TTarget>(
-        JsonElement sourceObject,
-        MappingProfile profile,
-        SrdSourceMetadata metadata)
+    public MappingResult<T> Map<T>(JsonElement sourceObj, MappingProfile profile, SrdSourceMetadata meta)
     {
-        var warnings = new List<string>();
-        var errors = new List<string>();
+        var result = new MappingResult<T>();
 
-        MappingRules rules;
         try
         {
-            rules = JsonSerializer.Deserialize<MappingRules>(profile.RulesJson, _json) ?? new MappingRules();
-        }
-        catch (Exception ex)
-        {
-            return MappingResult<TTarget>.Failure($"Invalid RulesJson for profile '{profile.Id}': {ex.Message}");
-        }
+            var map = SimpleFieldMap.FromJson(profile.RulesJson);
+            var targetType = typeof(T);
 
-        var target = Activator.CreateInstance<TTarget>();
-
-        foreach (var field in rules.Fields)
-        {
-            try
+            var instance = Activator.CreateInstance(targetType);
+            if (instance is null)
             {
-                JsonElement? value = null;
+                result.Errors.Add($"Could not create instance of {targetType.FullName}");
+                return result;
+            }
 
-                if (!string.IsNullOrWhiteSpace(field.ConstantJson))
+            foreach (var prop in targetType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!prop.CanWrite) continue;
+
+                var targetName = prop.Name;
+
+                map.Fields.TryGetValue(targetName, out var ruleValue);
+
+                if (string.Equals(ruleValue, SimpleFieldMap.NotAvailableToken, StringComparison.OrdinalIgnoreCase))
+                    continue; // explicitly not mapped
+
+                // auto-match when null/empty
+                string? sourceField = null;
+                if (string.IsNullOrWhiteSpace(ruleValue))
                 {
-                    value = JsonSerializer.Deserialize<JsonElement>(field.ConstantJson!, _json);
+                    sourceField = FindBestSourceField(sourceObj, targetName);
                 }
                 else
                 {
-                    foreach (var path in field.Source)
-                    {
-                        if (TryGetByPath(sourceObject, path, out var found))
-                        {
-                            value = found;
-                            break;
-                        }
-                    }
+                    sourceField = ruleValue;
                 }
 
-                if (value is null || value.Value.ValueKind == JsonValueKind.Undefined || value.Value.ValueKind == JsonValueKind.Null)
-                {
-                    var msg = $"Missing '{string.Join(" | ", field.Source)}' for target '{field.Target}' (profile {profile.Id})";
-                    if (field.Required) errors.Add(msg);
-                    else if (rules.BestEffort) warnings.Add(msg);
-                    else errors.Add(msg);
+                if (string.IsNullOrWhiteSpace(sourceField))
                     continue;
-                }
 
-                object? coerced = Coerce(value.Value, GetTargetPropertyType<TTarget>(field.Target), field.Transform, warnings);
+                if (!TryGetJsonValue(sourceObj, sourceField!, out var jsonValue))
+                    continue;
 
-                if (!TrySetTarget(target!, field.Target, coerced))
-                {
-                    var msg = $"Failed to set target '{field.Target}' on {typeof(TTarget).Name}";
-                    if (field.Required) errors.Add(msg); else warnings.Add(msg);
-                }
+                var coerced = Coerce(jsonValue, prop.PropertyType);
+                if (coerced is null) continue;
+
+                prop.SetValue(instance, coerced);
             }
-            catch (Exception ex)
+
+            result.Entity = (T)instance;
+            result.IsSuccess = true;
+            return result;
+        }
+        catch (Exception ex)
+        {
+            result.Errors.Add(ex.ToString());
+            return result;
+        }
+    }
+
+    private static string? FindBestSourceField(JsonElement obj, string targetProp)
+    {
+        if (obj.ValueKind != JsonValueKind.Object) return null;
+
+        // exact match (case-insensitive)
+        foreach (var p in obj.EnumerateObject())
+            if (string.Equals(p.Name, targetProp, StringComparison.OrdinalIgnoreCase))
+                return p.Name;
+
+        // synonyms match
+        if (Synonyms.TryGetValue(targetProp, out var syns))
+        {
+            foreach (var s in syns)
             {
-                var msg = $"Exception mapping target '{field.Target}': {ex.Message}";
-                if (field.Required) errors.Add(msg); else warnings.Add(msg);
+                foreach (var p in obj.EnumerateObject())
+                    if (string.Equals(p.Name, s, StringComparison.OrdinalIgnoreCase))
+                        return p.Name;
             }
         }
 
-        if (errors.Count > 0)
-            return new MappingResult<TTarget> { Entity = default, Errors = errors, Warnings = warnings };
+        // snake_case match
+        var snake = ToSnakeCase(targetProp);
+        foreach (var p in obj.EnumerateObject())
+            if (string.Equals(p.Name, snake, StringComparison.OrdinalIgnoreCase))
+                return p.Name;
 
-        return new MappingResult<TTarget> { Entity = target, Errors = errors, Warnings = warnings };
+        return null;
     }
 
-    private static bool TryGetByPath(JsonElement root, string path, out JsonElement value)
+    private static string ToSnakeCase(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return s;
+        var chars = new List<char>(s.Length + 8);
+        for (int i = 0; i < s.Length; i++)
+        {
+            var c = s[i];
+            if (char.IsUpper(c) && i > 0) chars.Add('_');
+            chars.Add(char.ToLowerInvariant(c));
+        }
+        return new string(chars.ToArray());
+    }
+
+    private static bool TryGetJsonValue(JsonElement obj, string fieldOrPath, out JsonElement value)
     {
         value = default;
 
-        if (string.IsNullOrWhiteSpace(path))
-            return false;
+        if (obj.ValueKind != JsonValueKind.Object) return false;
 
-        var current = root;
-        foreach (var segment in path.Split('.', StringSplitOptions.RemoveEmptyEntries))
+        // support dot paths: "a.b.c"
+        var parts = fieldOrPath.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        JsonElement current = obj;
+
+        foreach (var part in parts)
         {
-            if (current.ValueKind != JsonValueKind.Object)
-                return false;
-
-            if (!current.TryGetProperty(segment, out var next))
-                return false;
-
+            if (current.ValueKind != JsonValueKind.Object) return false;
+            if (!current.TryGetProperty(part, out var next)) return false;
             current = next;
         }
 
@@ -116,130 +171,56 @@ public sealed class GenericMappingEngine : IMappingEngine
         return true;
     }
 
-    private static Type GetTargetPropertyType<TTarget>(string targetPath)
+    private object? Coerce(JsonElement value, Type targetType)
     {
-        var type = typeof(TTarget);
-        foreach (var seg in targetPath.Split('.', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var prop = type.GetProperty(seg, BindingFlags.Public | BindingFlags.Instance);
-            if (prop is null) return typeof(object);
-            type = prop.PropertyType;
-        }
-        return type;
-    }
-
-    private object? Coerce(JsonElement value, Type targetType, string? transform, List<string> warnings)
-    {
-        // Nullable unwrap
-        var underlying = Nullable.GetUnderlyingType(targetType);
-        if (underlying != null) targetType = underlying;
-
-        // Transform string-like values first
-        if (!string.IsNullOrWhiteSpace(transform))
-        {
-            var t = transform.Trim().ToLowerInvariant();
-
-            // string transforms
-            if (value.ValueKind == JsonValueKind.String)
-            {
-                var s = value.GetString() ?? "";
-                s = t switch
-                {
-                    "trim" => s.Trim(),
-                    "lower" => s.ToLowerInvariant(),
-                    "upper" => s.ToUpperInvariant(),
-                    _ => s
-                };
-                value = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(s));
-            }
-
-            if (t == "parse_size")
-            {
-                var s = value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
-                var parsed = EnumParsers.ParseSize(s);
-                return parsed;
-            }
-            if (t == "parse_creature_type")
-            {
-                var s = value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
-                var parsed = EnumParsers.ParseCreatureType(s);
-                return parsed;
-            }
-            if (t == "parse_damage_type")
-            {
-                var s = value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
-                var parsed = EnumParsers.ParseDamageType(s);
-                return parsed;
-            }
-            if (t == "parse_cr")
-            {
-                var s = value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
-                var parsed = ChallengeRatingParser.Parse(s);
-                if (parsed == null) warnings.Add($"Could not parse CR '{s}'");
-                return parsed ?? new ChallengeRating(0, 1);
-            }
-        }
-
-        // Direct JSON deserialization into the target type
         try
         {
-            var raw = value.GetRawText();
-            return JsonSerializer.Deserialize(raw, targetType, _json);
-        }
-        catch
-        {
-            // fallback conversions
-            if (targetType == typeof(string)) return value.ToString();
-            if (targetType == typeof(int) && value.TryGetInt32(out var i)) return i;
-            if (targetType == typeof(double) && value.TryGetDouble(out var d)) return d;
+            // nullables
+            var nt = Nullable.GetUnderlyingType(targetType);
+            if (nt != null) targetType = nt;
+
+            if (targetType == typeof(string))
+                return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+
+            if (targetType == typeof(int))
+            {
+                if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var i)) return i;
+                if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out var si)) return si;
+            }
+
+            if (targetType == typeof(double))
+            {
+                if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var d)) return d;
+                if (value.ValueKind == JsonValueKind.String && double.TryParse(value.GetString(), out var sd)) return sd;
+            }
+
+            if (targetType == typeof(bool))
+            {
+                if (value.ValueKind == JsonValueKind.True) return true;
+                if (value.ValueKind == JsonValueKind.False) return false;
+                if (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var sb)) return sb;
+            }
+
             if (targetType.IsEnum && value.ValueKind == JsonValueKind.String)
             {
                 var s = value.GetString();
-                if (!string.IsNullOrWhiteSpace(s) && Enum.TryParse(targetType, s, ignoreCase: true, out var parsed))
+                if (!string.IsNullOrWhiteSpace(s) && Enum.TryParse(targetType, s, true, out var parsed))
                     return parsed;
             }
+
+            if (targetType == typeof(ChallengeRating))
+            {
+                Console.WriteLine($"CR raw={value.GetRawText()} kind={value.ValueKind}");
+            }
+
+            // lists/complex types: try JsonSerializer
+            var raw = value.GetRawText();
+            return JsonSerializer.Deserialize(raw, targetType, _json);
+        }
+        catch (Exception ex)
+        {
+            Console.Write(ex);
             return null;
         }
-    }
-
-    private static bool TrySetTarget<TTarget>(TTarget target, string targetPath, object? value)
-    {
-        if (target == null) return false;
-
-        var segments = targetPath.Split('.', StringSplitOptions.RemoveEmptyEntries);
-        object current = target!;
-        Type currentType = typeof(TTarget);
-
-        for (int i = 0; i < segments.Length; i++)
-        {
-            var seg = segments[i];
-            var prop = currentType.GetProperty(seg, BindingFlags.Public | BindingFlags.Instance);
-            if (prop is null) return false;
-
-            if (i == segments.Length - 1)
-            {
-                if (!prop.CanWrite) return false;
-
-                // if value is null and target is non-nullable value type, skip
-                if (value == null && prop.PropertyType.IsValueType && Nullable.GetUnderlyingType(prop.PropertyType) == null)
-                    return false;
-
-                prop.SetValue(current, value);
-                return true;
-            }
-            else
-            {
-                var next = prop.GetValue(current);
-                if (next == null)
-                {
-                    next = Activator.CreateInstance(prop.PropertyType);
-                    prop.SetValue(current, next);
-                }
-                current = next!;
-                currentType = prop.PropertyType;
-            }
-        }
-
-        return false;
     }
 }

@@ -1,18 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SilverSpires.Tactics\SilverSpires.Tactics.csproj" />
     <ProjectReference Include="..\SilverSpires.Tactics.Srd\SilverSpires.Tactics.Srd.csproj" />
     <ProjectReference Include="..\SilverSpires.Tactics.Srd.Persistence\SilverSpires.Tactics.Srd.Persistence.csproj" />
     <ProjectReference Include="..\SilverSpires.Tactics.Srd.IngestionModule\SilverSpires.Tactics.Srd.Ingestion.csproj" />
   </ItemGroup>
-
 </Project>
