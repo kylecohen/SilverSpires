@@ -326,4 +326,65 @@ WHEN NOT MATCHED THEN INSERT (EntityType, Id, Json, UpdatedUtc) VALUES (@type, @
         }
         return list;
     }
+
+    // -------------------------
+    // Sync helpers (raw)
+    // -------------------------
+    public async Task<IReadOnlyList<SrdEntityEnvelope>> GetEntityBatchAsync(
+        string entityType,
+        DateTime? updatedSinceUtc,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        if (page < 0) page = 0;
+        if (pageSize <= 0) pageSize = 100;
+        if (pageSize > 2000) pageSize = 2000;
+
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+SELECT EntityType, Id, Json, UpdatedUtc
+FROM SrdEntities
+WHERE EntityType=@type
+  AND (@since IS NULL OR UpdatedUtc > @since)
+ORDER BY UpdatedUtc ASC, Id ASC
+OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;";
+        cmd.Parameters.AddWithValue("@type", entityType);
+        cmd.Parameters.AddWithValue("@since", (object?)updatedSinceUtc ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@take", pageSize);
+        cmd.Parameters.AddWithValue("@skip", page * pageSize);
+
+        var list = new List<SrdEntityEnvelope>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+        {
+            var et = r.GetString(0);
+            var id = r.GetString(1);
+            var json = r.GetString(2);
+            var utc = r.GetDateTime(3);
+            list.Add(new SrdEntityEnvelope(et, id, json, utc));
+        }
+
+        return list;
+    }
+
+    public async Task<DateTime?> GetLatestEntityUpdatedUtcAsync(CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT MAX(UpdatedUtc) FROM SrdEntities;";
+        var scalar = await cmd.ExecuteScalarAsync(ct);
+        if (scalar is null || scalar is DBNull) return null;
+
+        if (scalar is DateTime dt) return dt;
+        if (DateTime.TryParse(scalar.ToString(), out dt)) return dt;
+
+        return null;
+    }
+
 }

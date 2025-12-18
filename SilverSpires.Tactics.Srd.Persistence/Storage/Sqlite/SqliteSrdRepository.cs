@@ -332,4 +332,73 @@ ON CONFLICT(EntityType, Id) DO UPDATE SET
 
         return list;
     }
+
+    // -------------------------
+    // Sync helpers (raw)
+    // -------------------------
+    public async Task<IReadOnlyList<SrdEntityEnvelope>> GetEntityBatchAsync(
+        string entityType,
+        DateTime? updatedSinceUtc,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        if (page < 0) page = 0;
+        if (pageSize <= 0) pageSize = 100;
+        if (pageSize > 2000) pageSize = 2000;
+
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+SELECT EntityType, Id, Json, UpdatedUtc
+FROM SrdEntities
+WHERE EntityType=$type
+  AND ($since IS NULL OR UpdatedUtc > $since)
+ORDER BY UpdatedUtc ASC, Id ASC
+LIMIT $take OFFSET $skip;";
+        cmd.Parameters.AddWithValue("$type", entityType);
+        cmd.Parameters.AddWithValue("$since", updatedSinceUtc is null ? (object?)DBNull.Value : updatedSinceUtc.Value.ToString("o"));
+        cmd.Parameters.AddWithValue("$take", pageSize);
+        cmd.Parameters.AddWithValue("$skip", page * pageSize);
+
+        var list = new List<SrdEntityEnvelope>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+        {
+            var et = r.GetString(0);
+            var id = r.GetString(1);
+            var json = r.GetString(2);
+            var utcStr = r.GetString(3);
+
+            DateTime utc;
+            if (!DateTime.TryParse(utcStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out utc))
+                utc = DateTime.UtcNow;
+
+            list.Add(new SrdEntityEnvelope(et, id, json, utc));
+        }
+
+        return list;
+    }
+
+    public async Task<DateTime?> GetLatestEntityUpdatedUtcAsync(CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT MAX(UpdatedUtc) FROM SrdEntities;";
+        var scalar = await cmd.ExecuteScalarAsync(ct);
+        if (scalar is null || scalar is DBNull) return null;
+
+        var s = scalar.ToString();
+        if (string.IsNullOrWhiteSpace(s)) return null;
+
+        if (DateTime.TryParse(s, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt))
+            return dt;
+
+        return null;
+    }
+
 }

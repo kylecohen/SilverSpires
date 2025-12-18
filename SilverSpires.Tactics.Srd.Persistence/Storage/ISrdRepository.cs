@@ -53,7 +53,25 @@ public interface ISrdRepository
     Task<IReadOnlyList<SrdArmor>> GetAllArmorAsync(CancellationToken ct = default);
     Task<IReadOnlyList<GameEffect>> GetAllEffectsAsync(CancellationToken ct = default);
 
-    public static ISrdRepository CreateRepository()
+    
+    // Sync helpers (raw)
+    /// <summary>
+    /// Returns a page of raw entity JSON with UpdatedUtc, filtered by an optional updated-since timestamp.
+    /// Intended for client sync/caching.
+    /// </summary>
+    Task<IReadOnlyList<SrdEntityEnvelope>> GetEntityBatchAsync(
+        string entityType,
+        DateTime? updatedSinceUtc,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the most recent UpdatedUtc across all entities (or null if none).
+    /// </summary>
+    Task<DateTime?> GetLatestEntityUpdatedUtcAsync(CancellationToken ct = default);
+
+public static ISrdRepository CreateRepository()
     {
         var sqlCs = Environment.GetEnvironmentVariable("SRD_SQL_CONNECTION_STRING");
         if (!string.IsNullOrWhiteSpace(sqlCs))
