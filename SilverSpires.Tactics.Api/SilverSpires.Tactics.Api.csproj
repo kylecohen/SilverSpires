@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\SilverSpires.Tactics.Srd.IngestionModule\SilverSpires.Tactics.Srd.Ingestion.csproj" />
     <ProjectReference Include="..\SilverSpires.Tactics.Srd.Persistence\SilverSpires.Tactics.Srd.Persistence.csproj" />
     <ProjectReference Include="..\SilverSpires.Tactics.Srd\SilverSpires.Tactics.Srd.csproj" />
   </ItemGroup>

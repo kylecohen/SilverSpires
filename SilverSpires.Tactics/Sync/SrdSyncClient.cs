@@ -36,7 +36,7 @@ public sealed class SrdSyncClient
     /// Sync all supported SRD entity types using the server's raw sync endpoint.
     /// Pass lastSyncUtc as the "updatedSinceUtc" filter. Returns the new lastSyncUtc you should persist.
     /// </summary>
-    public async Task<DateTime> SyncAllAsync(DateTime? lastSyncUtc, CancellationToken ct = default)
+    public async Task<DateTime?> SyncAllAsync(DateTime? lastSyncUtc, CancellationToken ct = default)
     {
         await _localRepo.InitializeAsync(ct);
 

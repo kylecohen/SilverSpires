@@ -7,7 +7,9 @@ namespace SilverSpires.Tactics.Combat
     {
         Player1,
         Player2,
-        Goblins
+        Goblins,
+        Player,
+        Enemy
     }
 
     public sealed class BattleUnit

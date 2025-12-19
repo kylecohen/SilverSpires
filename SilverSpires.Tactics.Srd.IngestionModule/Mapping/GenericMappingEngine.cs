@@ -30,21 +30,7 @@ public sealed class GenericMappingEngine : IMappingEngine
 
     public GenericMappingEngine()
     {
-        _json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        _json.Converters.Add(new JsonStringEnumConverter()); // optional now
-        _json.Converters.Add(new ChallengeRatingJsonConverter());
-
-        // Add safe converters for enums you know are problematic:
-        _json.Converters.Add(new SafeEnumJsonConverter<AbilityScoreType>(
-            new Dictionary<string, AbilityScoreType>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["str"] = AbilityScoreType.Strength,
-                ["dex"] = AbilityScoreType.Dexterity,
-                ["con"] = AbilityScoreType.Constitution,
-                ["int"] = AbilityScoreType.Intelligence,
-                ["wis"] = AbilityScoreType.Wisdom,
-                ["cha"] = AbilityScoreType.Charisma,
-            }));
+        _json = SrdJsonOptions.CreateDefault();
     }
 
     public MappingResult<T> Map<T>(JsonElement sourceObj, MappingProfile profile, SrdSourceMetadata meta)
@@ -96,6 +82,8 @@ public sealed class GenericMappingEngine : IMappingEngine
 
                 prop.SetValue(instance, coerced);
             }
+
+            ApplyDefaults(instance);
 
             result.Entity = (T)instance;
             result.IsSuccess = true;
@@ -171,7 +159,64 @@ public sealed class GenericMappingEngine : IMappingEngine
         return true;
     }
 
-    private object? Coerce(JsonElement value, Type targetType)
+    
+    private static void ApplyDefaults(object instance)
+    {
+        var t = instance.GetType();
+
+        foreach (var prop in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (!prop.CanWrite) continue;
+
+            var pt = prop.PropertyType;
+            var val = prop.GetValue(instance);
+
+            // Strings: never null
+            if (pt == typeof(string))
+            {
+                if (val is null) prop.SetValue(instance, string.Empty);
+                continue;
+            }
+
+            // Arrays: never null
+            if (pt.IsArray)
+            {
+                if (val is null)
+                {
+                    var elem = pt.GetElementType()!;
+                    var empty = Array.CreateInstance(elem, 0);
+                    prop.SetValue(instance, empty);
+                }
+                continue;
+            }
+
+            // List<T> or ICollection<T>
+            if (val is null && pt.IsGenericType)
+            {
+                var genDef = pt.GetGenericTypeDefinition();
+                if (genDef == typeof(List<>) || genDef == typeof(ICollection<>) || genDef == typeof(IEnumerable<>))
+                {
+                    var elem = pt.GetGenericArguments()[0];
+                    var listType = typeof(List<>).MakeGenericType(elem);
+                    prop.SetValue(instance, Activator.CreateInstance(listType));
+                    continue;
+                }
+            }
+
+            // Complex classes: try parameterless ctor so nested objects exist (only when nullable not intended)
+            if (val is null && pt.IsClass && pt != typeof(object))
+            {
+                var ctor = pt.GetConstructor(Type.EmptyTypes);
+                if (ctor != null)
+                {
+                    try { prop.SetValue(instance, Activator.CreateInstance(pt)); }
+                    catch { /* ignore */ }
+                }
+            }
+        }
+    }
+
+private object? Coerce(JsonElement value, Type targetType)
     {
         try
         {
