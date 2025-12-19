@@ -40,7 +40,7 @@ namespace SilverSpires.Tactics.Combat
         public static BattleUnit? FindNearestEnemy(BattleContext ctx, BattleUnit actor)
         {
             return ctx.Units
-                .Where(u => u.IsAlive && u.Faction != actor.Faction)
+                .Where(u => u.IsAlive && u.FactionId != actor.FactionId)
                 .OrderBy(u => Distance(actor.Creature.Position, u.Creature.Position))
                 .FirstOrDefault();
         }

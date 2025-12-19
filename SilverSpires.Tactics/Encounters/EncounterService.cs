@@ -22,7 +22,8 @@ namespace SilverSpires.Tactics.Encounters
         public IReadOnlyCollection<BattleUnit> SpawnEncounter(
             GameMap map,
             EncounterDefinition definition,
-            Faction faction)
+            Guid factionId,
+            string? factionName = null)
         {
             if (map == null) throw new ArgumentNullException(nameof(map));
             if (definition == null) throw new ArgumentNullException(nameof(definition));

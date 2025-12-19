@@ -25,7 +25,7 @@ namespace SilverSpires.Tactics.Combat
 
             int maxMoveTiles = creature.Stats.SpeedTiles * 2;
 
-            Console.WriteLine($"{creature.Stats.Name} [{actor.Faction}] takes the Dash action.");
+            Console.WriteLine($"{creature.Stats.Name} [{(actor.FactionName ?? actor.FactionId.ToString())}] takes the Dash action.");
 
             while (maxMoveTiles > 0)
             {
@@ -54,7 +54,7 @@ namespace SilverSpires.Tactics.Combat
         {
             actor.IsDodging = true;
             actor.DodgeExpiresAfterRound = context.Round;
-            Console.WriteLine($"{actor.Creature.Stats.Name} [{actor.Faction}] takes the Dodge action.");
+            Console.WriteLine($"{actor.Creature.Stats.Name} [{(actor.FactionName ?? actor.FactionId.ToString())}] takes the Dodge action.");
         }
     }
 }

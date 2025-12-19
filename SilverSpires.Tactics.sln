@@ -6,8 +6,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SilverSpires.Tactics", "Sil
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SilverSpires.Tactics.Srd", "SilverSpires.Tactics.Srd\SilverSpires.Tactics.Srd.csproj", "{88AF5FAC-CA02-FFB6-5881-D27AD102899E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SilverSpires.Tactics.Demo", "SilverSpires.Tactics.Demo\SilverSpires.Tactics.Demo.csproj", "{3C126914-4850-B03E-27C0-17F852381A31}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SilverSpires.Tactics.Srd.Ingestion", "SilverSpires.Tactics.Srd.IngestionModule\SilverSpires.Tactics.Srd.Ingestion.csproj", "{04E1AD11-E652-9F87-1017-160340512A59}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SilverSpires.Tactics.Srd.Persistence", "SilverSpires.Tactics.Srd.Persistence\SilverSpires.Tactics.Srd.Persistence.csproj", "{A0074FE3-43DB-4312-A116-60F35D52FD3B}"

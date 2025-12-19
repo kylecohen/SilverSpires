@@ -1,4 +1,7 @@
 using Microsoft.AspNetCore.Http.Features;
+using SilverSpires.Tactics.Api.Admin;
+using SilverSpires.Tactics.Srd.IngestionModule.Ingestion;
+using SilverSpires.Tactics.Api;
 using SilverSpires.Tactics.Srd.Persistence.Storage;
 
 using SilverSpires.Tactics.Srd.Characters;
@@ -20,6 +23,22 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddSingleton<ISrdRepository>(_ => ISrdRepository.CreateRepository());
 
+
+
+// -----------------------
+// Admin jobs + refresh SRD
+// -----------------------
+builder.Services.AddSingleton<IAdminJobStore>(sp =>
+{
+    var sqlServer = Environment.GetEnvironmentVariable("SRD_SQL_CONNECTION_STRING");
+    if (!string.IsNullOrWhiteSpace(sqlServer))
+        return new SqlServerAdminJobStore(sqlServer);
+
+    var sqlite = Environment.GetEnvironmentVariable("SRD_SQLITE_PATH") ?? Path.Combine(AppContext.BaseDirectory, "data", "srd.sqlite");
+    return new SqliteAdminJobStore(sqlite);
+});
+
+builder.Services.AddSingleton<RefreshSrdJobManager>();
 var app = builder.Build();
 
 app.MapGet("/", () => Results.Ok(new
@@ -499,6 +518,31 @@ app.MapPost("/api/srd/upload/effects", async (HttpRequest request, ISrdRepositor
 
     foreach (var e in items) await repo.UpsertEffectAsync(e, ct);
     return Results.Ok(new { upserted = items.Count });
+});
+
+
+
+// -----------------------
+// Admin endpoints
+// -----------------------
+app.MapPost("/api/admin/refresh-srd", async (HttpContext ctx, RefreshSrdJobManager jobs, CancellationToken ct) =>
+{
+    if (!IsUploadAuthorized(ctx.Request)) return UploadUnauthorized();
+
+    var job = await jobs.CreateQueuedAsync(ct);
+
+    // fire-and-forget on threadpool; state is persisted via job store
+    _ = Task.Run(() => jobs.RunAsync(job.Id, ct), CancellationToken.None);
+
+    return Results.Accepted($"/api/admin/jobs/{job.Id}", job);
+});
+
+app.MapGet("/api/admin/jobs/{id:guid}", async (HttpContext ctx, Guid id, RefreshSrdJobManager jobs, CancellationToken ct) =>
+{
+    if (!IsUploadAuthorized(ctx.Request)) return UploadUnauthorized();
+
+    var job = await jobs.GetAsync(id, ct);
+    return job is null ? Results.NotFound() : Results.Ok(job);
 });
 
 app.Run();

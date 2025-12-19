@@ -1,3 +1,4 @@
+using SilverSpires.Tactics.Factions;
 using SilverSpires.Tactics.Combat;
 using SilverSpires.Tactics.Encounters;
 using SilverSpires.Tactics.Srd.Persistence.Catalog;
@@ -13,17 +14,24 @@ public sealed class CampaignRunner
 {
     private readonly IGameRepository _game;
     private readonly ISrdRepository _srdRepo;
+    private readonly IFactionRepository _factions;
+    private readonly IHostilityResolver _hostility;
 
-    public CampaignRunner(IGameRepository game, ISrdRepository srdRepo)
+    public CampaignRunner(IGameRepository game, ISrdRepository srdRepo, IFactionRepository factions, IHostilityResolver hostility)
     {
         _game = game ?? throw new ArgumentNullException(nameof(game));
         _srdRepo = srdRepo ?? throw new ArgumentNullException(nameof(srdRepo));
+        _factions = factions ?? throw new ArgumentNullException(nameof(factions));
+        _hostility = hostility ?? throw new ArgumentNullException(nameof(hostility));
     }
 
     public async Task RunAsync(Guid campaignId, TextReader input, TextWriter output, CancellationToken ct = default)
     {
         await _game.InitializeAsync(ct);
         await _srdRepo.InitializeAsync(ct);
+        await _factions.InitializeAsync(ct);
+
+        var (partyFactionId, oppositionFactionId) = await EnsureDefaultFactionsAsync(ct);
 
         var campaign = await _game.GetCampaignAsync(campaignId, ct);
         if (campaign is null)
@@ -122,7 +130,7 @@ public sealed class CampaignRunner
                 var map = new SilverSpires.Tactics.Maps.GameMap(20, 20);
                 var units = new List<SilverSpires.Tactics.Combat.BattleUnit>();
 
-                units.AddRange(encounterService.SpawnEncounter(map, def, SilverSpires.Tactics.Combat.Faction.Enemy));
+                units.AddRange(encounterService.SpawnEncounter(map, def, oppositionFactionId, "Opposition"));
 
                 // Spawn player units from stored character records.
                 // NOTE: positions are basic for now; later you'll drive this from a placement phase/UI.
@@ -146,7 +154,7 @@ public sealed class CampaignRunner
 
                     var pos = new SilverSpires.Tactics.Maps.GridPosition(startX + (i % 6), startY + (i / 6));
                     units.Add(SilverSpires.Tactics.Characters.PlayerCharacterFactory.CreateBattleUnit(
-                        srd, tpl, pos, SilverSpires.Tactics.Combat.Faction.Player));
+                        srd, tpl, pos, partyFactionId, "Party"));
                 }
 
                 await output.WriteLineAsync($"Starting encounter: {enc.Name}");

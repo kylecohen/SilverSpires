@@ -1,8 +1,9 @@
 using Microsoft.Data.Sqlite;
+using SilverSpires.Tactics.Factions;
 
 namespace SilverSpires.Tactics.Game;
 
-public sealed class SqliteGameRepository : IGameRepository
+public sealed class SqliteGameRepository : IGameRepository, IFactionRepository
 {
     private readonly string _dbPath;
 
@@ -86,6 +87,41 @@ CREATE TABLE IF NOT EXISTS EncounterCharacters (
 CREATE TABLE IF NOT EXISTS Settings (
   [Key] TEXT PRIMARY KEY,
   [Value] TEXT NOT NULL
+);
+
+
+-- -----------------
+-- Factions + Relationships
+-- -----------------
+CREATE TABLE IF NOT EXISTS Factions (
+  Id TEXT PRIMARY KEY,
+  Name TEXT NOT NULL,
+  InsigniaRef TEXT NULL,
+  CreatedUtc TEXT NOT NULL,
+  UpdatedUtc TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS FactionRelations (
+  SourceFactionId TEXT NOT NULL,
+  TargetFactionId TEXT NOT NULL,
+  Score INTEGER NOT NULL,
+  PRIMARY KEY (SourceFactionId, TargetFactionId)
+);
+
+CREATE TABLE IF NOT EXISTS CharacterFactions (
+  CharacterId TEXT NOT NULL,
+  FactionId TEXT NOT NULL,
+  IsPrimary INTEGER NOT NULL,
+  Rank INTEGER NOT NULL,
+  Title TEXT NULL,
+  PRIMARY KEY (CharacterId, FactionId)
+);
+
+CREATE TABLE IF NOT EXISTS CharacterPersonalRelations (
+  FromCharacterId TEXT NOT NULL,
+  ToCharacterId TEXT NOT NULL,
+  Score INTEGER NOT NULL,
+  PRIMARY KEY (FromCharacterId, ToCharacterId)
 );
 ", ct);
     }
@@ -513,7 +549,236 @@ ON CONFLICT([Key]) DO UPDATE SET [Value]=excluded.[Value];";
     // -----------------
     // Helpers
     // -----------------
-    private SqliteConnection CreateConnection()
+    
+
+    // -----------------
+    // Factions
+    // -----------------
+    async Task IFactionRepository.InitializeAsync(CancellationToken ct) => await InitializeAsync(ct);
+
+    public async Task<IReadOnlyList<FactionRecord>> ListFactionsAsync(CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, Name, InsigniaRef, CreatedUtc, UpdatedUtc FROM Factions ORDER BY Name ASC;";
+
+        var list = new List<FactionRecord>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+        {
+            list.Add(new FactionRecord(
+                Guid.Parse(r.GetString(0)),
+                r.GetString(1),
+                r.IsDBNull(2) ? null : r.GetString(2),
+                DateTime.Parse(r.GetString(3)).ToUniversalTime(),
+                DateTime.Parse(r.GetString(4)).ToUniversalTime()));
+        }
+        return list;
+    }
+
+    public async Task<FactionRecord?> GetFactionAsync(Guid id, CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Id, Name, InsigniaRef, CreatedUtc, UpdatedUtc FROM Factions WHERE Id=$id;";
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) return null;
+
+        return new FactionRecord(
+            Guid.Parse(r.GetString(0)),
+            r.GetString(1),
+            r.IsDBNull(2) ? null : r.GetString(2),
+            DateTime.Parse(r.GetString(3)).ToUniversalTime(),
+            DateTime.Parse(r.GetString(4)).ToUniversalTime());
+    }
+
+    public async Task<FactionRecord> UpsertFactionAsync(Guid? id, string name, string? insigniaRef, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name is required.", nameof(name));
+
+        var fid = id ?? Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        // If exists: preserve CreatedUtc
+        DateTime created = now;
+        await using (var read = conn.CreateCommand())
+        {
+            read.CommandText = "SELECT CreatedUtc FROM Factions WHERE Id=$id;";
+            read.Parameters.AddWithValue("$id", fid.ToString());
+            var scalar = await read.ExecuteScalarAsync(ct);
+            if (scalar is string s && DateTime.TryParse(s, out var parsed))
+                created = parsed.ToUniversalTime();
+        }
+
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = @"
+INSERT INTO Factions (Id, Name, InsigniaRef, CreatedUtc, UpdatedUtc)
+VALUES ($id, $name, $ins, $created, $updated)
+ON CONFLICT(Id) DO UPDATE SET
+  Name=$name,
+  InsigniaRef=$ins,
+  UpdatedUtc=$updated;
+";
+            cmd.Parameters.AddWithValue("$id", fid.ToString());
+            cmd.Parameters.AddWithValue("$name", name.Trim());
+            cmd.Parameters.AddWithValue("$ins", (object?)insigniaRef ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$created", created.ToString("o"));
+            cmd.Parameters.AddWithValue("$updated", now.ToString("o"));
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        return new FactionRecord(fid, name.Trim(), insigniaRef, created, now);
+    }
+
+    public async Task DeleteFactionAsync(Guid id, CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM Factions WHERE Id=$id;";
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<int?> GetFactionRelationOverrideAsync(Guid sourceFactionId, Guid targetFactionId, CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Score FROM FactionRelations WHERE SourceFactionId=$a AND TargetFactionId=$b;";
+        cmd.Parameters.AddWithValue("$a", sourceFactionId.ToString());
+        cmd.Parameters.AddWithValue("$b", targetFactionId.ToString());
+
+        var scalar = await cmd.ExecuteScalarAsync(ct);
+        if (scalar is long l) return (int)l;
+        if (scalar is int i) return i;
+        return null;
+    }
+
+    public async Task UpsertFactionRelationOverrideAsync(Guid sourceFactionId, Guid targetFactionId, int score, CancellationToken ct = default)
+    {
+        score = RelationshipBands.Clamp(score);
+
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+INSERT INTO FactionRelations (SourceFactionId, TargetFactionId, Score)
+VALUES ($a, $b, $s)
+ON CONFLICT(SourceFactionId, TargetFactionId) DO UPDATE SET Score=$s;
+";
+        cmd.Parameters.AddWithValue("$a", sourceFactionId.ToString());
+        cmd.Parameters.AddWithValue("$b", targetFactionId.ToString());
+        cmd.Parameters.AddWithValue("$s", score);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<CharacterFactionMembershipRecord>> GetCharacterFactionsAsync(Guid characterId, CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT CharacterId, FactionId, IsPrimary, Rank, Title FROM CharacterFactions WHERE CharacterId=$id;";
+        cmd.Parameters.AddWithValue("$id", characterId.ToString());
+
+        var list = new List<CharacterFactionMembershipRecord>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+        {
+            list.Add(new CharacterFactionMembershipRecord(
+                Guid.Parse(r.GetString(0)),
+                Guid.Parse(r.GetString(1)),
+                r.GetInt32(2) != 0,
+                r.GetInt32(3),
+                r.IsDBNull(4) ? null : r.GetString(4)
+            ));
+        }
+        return list;
+    }
+
+    public async Task SetCharacterFactionsAsync(Guid characterId, IEnumerable<CharacterFactionMembershipRecord> memberships, CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        await using (var del = conn.CreateCommand())
+        {
+            del.Transaction = tx;
+            del.CommandText = "DELETE FROM CharacterFactions WHERE CharacterId=$id;";
+            del.Parameters.AddWithValue("$id", characterId.ToString());
+            await del.ExecuteNonQueryAsync(ct);
+        }
+
+        foreach (var m in memberships)
+        {
+            await using var ins = conn.CreateCommand();
+            ins.Transaction = tx;
+            ins.CommandText = @"
+INSERT INTO CharacterFactions (CharacterId, FactionId, IsPrimary, Rank, Title)
+VALUES ($c, $f, $p, $r, $t);
+";
+            ins.Parameters.AddWithValue("$c", characterId.ToString());
+            ins.Parameters.AddWithValue("$f", m.FactionId.ToString());
+            ins.Parameters.AddWithValue("$p", m.IsPrimary ? 1 : 0);
+            ins.Parameters.AddWithValue("$r", m.Rank);
+            ins.Parameters.AddWithValue("$t", (object?)m.Title ?? DBNull.Value);
+            await ins.ExecuteNonQueryAsync(ct);
+        }
+
+        await tx.CommitAsync(ct);
+    }
+
+    public async Task<int?> GetPersonalRelationshipAsync(Guid fromCharacterId, Guid toCharacterId, CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Score FROM CharacterPersonalRelations WHERE FromCharacterId=$a AND ToCharacterId=$b;";
+        cmd.Parameters.AddWithValue("$a", fromCharacterId.ToString());
+        cmd.Parameters.AddWithValue("$b", toCharacterId.ToString());
+
+        var scalar = await cmd.ExecuteScalarAsync(ct);
+        if (scalar is long l) return (int)l;
+        if (scalar is int i) return i;
+        return null;
+    }
+
+    public async Task UpsertPersonalRelationshipAsync(Guid fromCharacterId, Guid toCharacterId, int score, CancellationToken ct = default)
+    {
+        score = RelationshipBands.Clamp(score);
+
+        await using var conn = CreateConnection();
+        await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+INSERT INTO CharacterPersonalRelations (FromCharacterId, ToCharacterId, Score)
+VALUES ($a, $b, $s)
+ON CONFLICT(FromCharacterId, ToCharacterId) DO UPDATE SET Score=$s;
+";
+        cmd.Parameters.AddWithValue("$a", fromCharacterId.ToString());
+        cmd.Parameters.AddWithValue("$b", toCharacterId.ToString());
+        cmd.Parameters.AddWithValue("$s", score);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+private SqliteConnection CreateConnection()
         => new($"Data Source={_dbPath}");
 
     private static CampaignRecord ReadCampaign(SqliteDataReader r)

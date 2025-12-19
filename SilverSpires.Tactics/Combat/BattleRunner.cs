@@ -1,24 +1,24 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using SilverSpires.Tactics.Creatures;
 using SilverSpires.Tactics.Maps;
+using SilverSpires.Tactics.Factions;
 
 namespace SilverSpires.Tactics.Combat
 {
     public sealed class BattleRunner
     {
-        public Faction RunBattle(GameMap map, IList<BattleUnit> units, Random? rng = null)
+        public Guid? RunBattle(GameMap map, IList<BattleUnit> units, IHostilityResolver? hostility = null, Random? rng = null)
         {
+            if (map == null) throw new ArgumentNullException(nameof(map));
+            if (units == null) throw new ArgumentNullException(nameof(units));
+
             var rand = rng ?? new Random();
-            var ctx = new BattleContext(map, units, rand);
+            var host = hostility ?? new DefaultHostilityResolver();
+            var ctx = new BattleContext(map, units, rand, host);
 
             foreach (var u in units)
-            {
-                int dexMod = CreatureStats.AbilityMod(u.Creature.Stats.Dexterity);
-                int initRoll = rand.Next(1, 21) + dexMod;
-                u.Initiative = initRoll;
-            }
+                u.Initiative = rand.Next(1, 21) + u.Creature.Stats.InitiativeBonus;
 
             var turnOrder = units
                 .OrderByDescending(u => u.Initiative)
@@ -26,87 +26,77 @@ namespace SilverSpires.Tactics.Combat
 
             Console.WriteLine("== Battle Start ==");
             foreach (var u in turnOrder)
-            {
                 Console.WriteLine($"  {u}");
-            }
 
             int index = 0;
 
             while (true)
             {
-                var aliveFactions = turnOrder
-                    .Where(u => u.IsAlive)
-                    .Select(u => u.Faction)
-                    .Distinct()
+                // Determine whether any hostile pairs remain alive
+                var alive = turnOrder.Where(u => u.IsAlive).ToList();
+                if (alive.Count == 0) return null;
+
+                bool anyHostile = false;
+                for (int i = 0; i < alive.Count && !anyHostile; i++)
+                for (int j = i + 1; j < alive.Count && !anyHostile; j++)
+                    if (ctx.Hostility.AreHostile(alive[i].FactionId, alive[j].FactionId))
+                        anyHostile = true;
+
+                if (!anyHostile)
+                {
+                    // peaceful stalemate; if exactly one faction remains, return it.
+                    var remainingFactions = alive.Select(a => a.FactionId).Distinct().ToList();
+                    return remainingFactions.Count == 1 ? remainingFactions[0] : null;
+                }
+
+                var actor = turnOrder[index % turnOrder.Count];
+                index++;
+
+                if (!actor.IsAlive) continue;
+
+                var actorFactionLabel = actor.FactionName ?? actor.FactionId.ToString();
+                Console.WriteLine($"-- {actor.Creature.Stats.Name} [{actorFactionLabel}]'s turn (Init {actor.Initiative}) --");
+
+                // Choose a hostile target
+                var targets = alive
+                    .Where(u => u.IsAlive && ctx.Hostility.AreHostile(actor.FactionId, u.FactionId))
                     .ToList();
 
-                if (aliveFactions.Count <= 1)
+                if (targets.Count == 0)
                 {
-                    var winner = aliveFactions.Single();
-                    Console.WriteLine($"== Battle Over: {winner} wins ==");
-                    return winner;
-                }
-
-                if (index == 0)
-                {
-                    Console.WriteLine();
-                    Console.WriteLine($"== Round {ctx.Round} ==");
-                }
-
-                var actor = turnOrder[index];
-                index = (index + 1) % turnOrder.Count;
-
-                if (!actor.IsAlive)
-                {
-                    if (index == 0) ctx.Round++;
+                    Console.WriteLine("  (no hostile targets)");
+                    NextRoundIfNeeded(ctx, turnOrder, index);
                     continue;
                 }
 
-                if (actor.IsDodging && actor.DodgeExpiresAfterRound < ctx.Round)
+                var target = targets[rand.Next(targets.Count)];
+
+                // Basic: attack action (existing combat actions may do more)
+                var attack = actor.Actions.OfType<AttackAction>().FirstOrDefault();
+                if (attack == null)
                 {
-                    actor.IsDodging = false;
+                    Console.WriteLine("  (no attack action available)");
+                    NextRoundIfNeeded(ctx, turnOrder, index);
+                    continue;
                 }
 
-                Console.WriteLine();
-                Console.WriteLine($"-- {actor.Creature.Stats.Name} [{actor.Faction}]'s turn (Init {actor.Initiative}) --");
+                attack.Execute(ctx, actor, target);
 
-                var attackActions = actor.Actions.OfType<AttackAction>().ToList();
-                var dash = actor.Actions.OfType<DashAction>().FirstOrDefault();
-                var dodge = actor.Actions.OfType<DodgeAction>().FirstOrDefault();
+                NextRoundIfNeeded(ctx, turnOrder, index);
+            }
+        }
 
-                bool acted = false;
-
-                foreach (var action in attackActions)
+        private static void NextRoundIfNeeded(BattleContext ctx, List<BattleUnit> turnOrder, int index)
+        {
+            if (index % turnOrder.Count == 0)
+            {
+                ctx.Round++;
+                foreach (var u in turnOrder)
                 {
-                    if (action.CanExecute(ctx, actor))
-                    {
-                        action.Execute(ctx, actor);
-                        acted = true;
-                        break;
-                    }
+                    if (u.IsDodging && u.DodgeExpiresAfterRound < ctx.Round)
+                        u.IsDodging = false;
                 }
-
-                if (!acted && dash != null && dash.CanExecute(ctx, actor))
-                {
-                    dash.Execute(ctx, actor);
-                    acted = true;
-                }
-
-                if (!acted && dodge != null && dodge.CanExecute(ctx, actor))
-                {
-                    dodge.Execute(ctx, actor);
-                    acted = true;
-                }
-
-                if (!acted)
-                {
-                    Console.WriteLine("  No valid action.");
-                }
-
-                if (index == 0)
-                {
-                    ctx.Round++;
-                }
+                Console.WriteLine($"== Round {ctx.Round} ==");
             }
         }
     }

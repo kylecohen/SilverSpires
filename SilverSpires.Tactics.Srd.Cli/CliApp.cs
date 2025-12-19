@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using SilverSpires.Tactics.Game;
+using SilverSpires.Tactics.Factions;
 using SilverSpires.Tactics.Srd.Persistence.Storage;
 using SilverSpires.Tactics.Srd.Persistence.Storage.Json;
 using SilverSpires.Tactics.Sync;
@@ -242,7 +243,7 @@ public sealed class CliApp
 
                 await _srdRepo.InitializeAsync(ct);
 
-                var runner = new CampaignRunner(_gameRepo, _srdRepo);
+                var runner = new CampaignRunner(_gameRepo, _srdRepo, _gameRepo, _relationships);
                 await runner.RunAsync(id, Console.In, Console.Out, ct);
                 return 0;
             }

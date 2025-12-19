@@ -92,7 +92,7 @@ namespace SilverSpires.Tactics.Combat
             int totalAttack = d20 + AttackBonus;
 
             Console.WriteLine(
-                $"{creature.Stats.Name} [{actor.Faction}] uses {Name} on {target.Stats.Name} [{enemy.Faction}] - roll {d20} + {AttackBonus} = {totalAttack} vs AC {target.Stats.ArmorClass}");
+                $"{creature.Stats.Name} [{(actor.FactionName ?? actor.FactionId.ToString())}] uses {Name} on {target.Stats.Name} [{enemy.Faction}] - roll {d20} + {AttackBonus} = {totalAttack} vs AC {target.Stats.ArmorClass}");
 
             if (totalAttack >= target.Stats.ArmorClass)
             {
